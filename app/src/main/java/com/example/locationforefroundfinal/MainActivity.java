@@ -67,7 +67,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private LocationList latLngList;
     private Marker marker;
 
-
     private LocationListViewModel locationListViewModel;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
