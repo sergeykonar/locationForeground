@@ -4,6 +4,9 @@ import androidx.annotation.DrawableRes;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.lifecycle.Observer;
+import androidx.lifecycle.ViewModelProvider;
+import androidx.lifecycle.ViewModelProviders;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import android.Manifest;
@@ -35,8 +38,11 @@ import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 
+
+import com.example.locationforefroundfinal.model.LocationList;
 import com.example.locationforefroundfinal.service.NavigationService;
 
+import com.example.locationforefroundfinal.viewmodel.LocationListViewModel;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.OnMapReadyCallback;
@@ -58,13 +64,11 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private Button startBtn;
     private boolean tracking = false;
     private Intent intent;
-    private ArrayList<LatLng> latLngList;
-
-    private Messenger mService = null;
-    private boolean mBound = false;
-
+    private LocationList latLngList;
     private Marker marker;
 
+
+    private LocationListViewModel locationListViewModel;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -72,6 +76,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
         intent = new Intent(MainActivity.this, NavigationService.class);
         intent.setAction("START");
+        latLngList = new LocationList();
 
 
         // Obtain the SupportMapFragment and get notified when the map is ready to be used.
@@ -79,24 +84,31 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 .findFragmentById(R.id.map);
         mapFragment.getMapAsync(this);
 
-        latLngList = new ArrayList<>();
+        initStartButton();
+        initNotificationChannel();
 
-        if (ActivityCompat.checkSelfPermission(getApplicationContext(), Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION}, 200);
-            return;
-        }
+        locationListViewModel = ViewModelProviders.of(this).get(LocationListViewModel.class);
+        locationListViewModel.getData().observe(this, new Observer<ArrayList<LocationList>>() {
+            @Override
+            public void onChanged(ArrayList<LocationList> locationLists) {
+                Log.e("VALUES", "CHANGED: " + locationLists.size());
+            }
+        });
+    }
 
+
+    // Start button. On click starts/stops foreground service NavigationService. Checking permissions
+
+    private void initStartButton() {
         startBtn = (Button) findViewById(R.id.startTrack);
         startBtn.setOnClickListener(listener);
-
-
-        initNotificationChannel();
     }
 
     private View.OnClickListener listener = new View.OnClickListener() {
         @Override
         public void onClick(View v) {
             if(!tracking){
+                checkPermissions();
                 tracking = true;
                 startTracking();
                 startBtn.setText("Stop");
@@ -105,14 +117,28 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 tracking = false;
                 stopTracking();
                 startBtn.setText("Start");
+
             }
         }
     };
+
+    private void checkPermissions(){
+        if (ActivityCompat.checkSelfPermission(getApplicationContext(), Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION}, 200);
+            return;
+        }
+    }
+
+    private void startTracking() {
+        startService(intent);
+    }
 
     private void stopTracking() {
         Intent stopIntent = new Intent(MainActivity.this, NavigationService.class);
         stopIntent.setAction("STOP_ACTION");
         startService(stopIntent);
+        locationListViewModel.insertLocationList(latLngList);
+        Log.d("Locations size", String.valueOf(latLngList.size()));
         latLngList.clear();
     }
 
@@ -122,9 +148,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         LocalBroadcastManager.getInstance(this).registerReceiver(broadcastReceiver, new IntentFilter("location"));
     }
 
-    private void startTracking() {
-        startService(intent);
-    }
+
+
+    // Creating the BroadcastReceiver to get Location from Location Service
 
     private BroadcastReceiver broadcastReceiver = new BroadcastReceiver() {
         @Override
@@ -134,6 +160,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             updateMarker(s2);
         }
     };
+
+
+    // INITIALIZATION and UPDATE the position marker
 
     private void initMarker(){
         marker = map.addMarker(new MarkerOptions()
@@ -147,16 +176,18 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         latLngList.add(latLng);
         marker.setPosition(latLng);
         map.moveCamera(CameraUpdateFactory.newLatLngZoom(latLng, 14f));
-
         try {
             Polyline line = map.addPolyline(new PolylineOptions()
                     .add(latLngList.get(latLngList.size() - 2), latLng)
                     .width(5)
                     .color(Color.RED));
         }catch (Exception e){
-
+            Log.e(getPackageName(), "updateMarker :" + e.toString() );
         }
     }
+
+
+    // DO NOT TOUCH THIS CODE BELOW
 
     private void initNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
